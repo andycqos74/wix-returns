@@ -21,3 +21,6 @@ npm-debug.log*
 .DS_Store
 .idea/
 out
+
+# generated build stamp
+src/lib/build-info.ts

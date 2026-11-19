@@ -1,7 +1,17 @@
 import type { FC } from 'react';
-import { Badge } from '@wix/design-system';
+import { Badge, Text } from '@wix/design-system';
 import { dashboard } from '@wix/dashboard';
 import { STATUS_LABELS, type ReturnRecord } from '../lib/returns-logic';
+import { BUILD } from '../lib/build-info';
+
+/** Which code is running: the git commit it was built from, and when. */
+export const buildLabel = `build ${BUILD.commit} · ${new Date(BUILD.builtAt).toLocaleString('en-GB', {
+  day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+})}`;
+
+export const BuildStamp: FC = () => (
+  <Text size="tiny" secondary>{buildLabel}</Text>
+);
 
 export const StatusBadge: FC<{ status: ReturnRecord['status'] }> = ({ status }) => {
   const skin = ({ AWAITING_ITEM: 'warning', RECEIVED: 'general', COMPLETED: 'success', CANCELLED: 'neutralLight' } as const)[status];

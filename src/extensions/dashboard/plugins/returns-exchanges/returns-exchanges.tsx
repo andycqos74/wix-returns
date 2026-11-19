@@ -8,7 +8,7 @@ import '@wix/design-system/styles.global.css';
 import { RETURN_EDITOR_MODAL_ID } from '../../../../lib/config';
 import { formatMoney } from '../../../../lib/returns-logic';
 import { listReturnsForOrder } from '../../../../lib/wix-ops';
-import { KindBadge, StatusBadge, errorText } from '../../../../components/common';
+import { BuildStamp, KindBadge, StatusBadge, errorText } from '../../../../components/common';
 
 type Props = plugins.OrderDetails.OrderRightPanelParams;
 
@@ -67,6 +67,7 @@ const OrderReturnsPlugin: FC<Props> = (props) => {
               ))}
             </Box>
           )}
+          <Box marginTop="SP3"><BuildStamp /></Box>
         </Card.Content>
       </Card>
     </WixDesignSystemProvider>

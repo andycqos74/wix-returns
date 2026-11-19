@@ -6,6 +6,7 @@ import { Box, CustomModalLayout, Loader, WixDesignSystemProvider } from '@wix/de
 import '@wix/design-system/styles.global.css';
 import { NewReturnForm } from '../../../../components/NewReturnForm';
 import { ReturnDetail } from '../../../../components/ReturnDetail';
+import { BuildStamp } from '../../../../components/common';
 
 interface Params {
   orderId?: string;
@@ -36,6 +37,7 @@ const ReturnEditorModal: FC = () => {
         maxHeight="100vh"
         title={returnId ? 'Return / exchange' : 'Process a return or exchange'}
         onCloseButtonClick={close}
+        footnote={<BuildStamp />}
         content={
           !params ? (
             <Box align="center" padding="SP6"><Loader size="small" /></Box>

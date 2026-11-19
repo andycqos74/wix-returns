@@ -11,7 +11,11 @@
     "release": "wix app release",
     "typecheck": "tsc --noEmit",
     "wix": "wix",
-    "test": "node --test test/returns-logic.test.mjs"
+    "test": "node --test test/returns-logic.test.mjs",
+    "predev": "node scripts/stamp-build.mjs",
+    "prebuild": "node scripts/stamp-build.mjs",
+    "prerelease": "node scripts/stamp-build.mjs",
+    "pretypecheck": "node scripts/stamp-build.mjs"
   },
   "dependencies": {
     "@wix/dashboard": "^1.3.48",
