@@ -3,6 +3,7 @@ import { Badge, Text } from '@wix/design-system';
 import { dashboard } from '@wix/dashboard';
 import { STATUS_LABELS, type ReturnRecord } from '../lib/returns-logic';
 import { BUILD } from '../lib/build-info';
+import { SCOPE_FOR_METHOD } from '../lib/wix-ops';
 
 /** Which code is running: the git commit it was built from, and when. */
 export const buildLabel = `build ${BUILD.commit} · ${new Date(BUILD.builtAt).toLocaleString('en-GB', {
@@ -45,16 +46,19 @@ export function errorText(e: unknown): string {
     /* plain-text message */
   }
   const app = err.details?.applicationError;
-  const code = app?.code && app.code !== 'UNKNOWN' ? app.code : '';
-  const description = app?.description && app.description !== 'UNKNOWN' && app.description !== message ? app.description : '';
   const status: number | undefined = err.status;
+  const noise = (v: unknown) => !v || v === 'UNKNOWN' || String(v) === String(status);
+  const code = noise(app?.code) ? '' : app.code;
+  const description = noise(app?.description) || app.description === message ? '' : app.description;
   const requestId: string | undefined = err.requestId ?? err.details?.requestId;
+  const method: string | undefined = err.wixMethod;
 
-  const main = [message && message !== 'UNKNOWN' ? message : '', description].filter(Boolean).join(': ') || 'Request failed';
-  const meta = [status && `HTTP ${status}`, code, requestId && `request ${requestId}`].filter(Boolean).join(', ');
+  const main = [noise(message) ? '' : message, description].filter(Boolean).join(': ') || 'Request failed';
+  const meta = [method, status && `HTTP ${status}`, code, requestId && `request ${requestId}`].filter(Boolean).join(', ');
+  const scope = method ? SCOPE_FOR_METHOD[method] : undefined;
   const hint =
     status === 403 || status === 401
-      ? ' The app is missing a permission on this site: add it in the app dashboard (Develop > Permissions), then re-approve the app on the site (Agree & Update).'
+      ? ` The app is missing a permission${scope ? `: ${scope}` : ''}. Add it in the app dashboard (Develop > Permissions), release a new version, then accept the update on the site.`
       : status === 404
         ? ' Wix says this does not exist on this site.'
         : '';
