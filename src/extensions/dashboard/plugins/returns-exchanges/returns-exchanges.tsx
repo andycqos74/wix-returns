@@ -8,7 +8,7 @@ import '@wix/design-system/styles.global.css';
 import { RETURN_EDITOR_MODAL_ID } from '../../../../lib/config';
 import { formatMoney } from '../../../../lib/returns-logic';
 import { listReturnsForOrder } from '../../../../lib/wix-ops';
-import { BuildStamp, KindBadge, StatusBadge, errorText } from '../../../../components/common';
+import { KindBadge, StatusBadge, buildLabel, errorText } from '../../../../components/common';
 
 type Props = plugins.OrderDetails.OrderRightPanelParams;
 
@@ -38,7 +38,7 @@ const OrderReturnsPlugin: FC<Props> = (props) => {
   return (
     <WixDesignSystemProvider features={{ newColorsBranding: true }}>
       <Card>
-        <Card.Header title="Returns & exchanges"
+        <Card.Header title="Returns & exchanges" subtitle={buildLabel}
           suffix={<Button size="small" onClick={() => open()}>Process return</Button>} />
         <Card.Divider />
         <Card.Content size="medium">
@@ -67,7 +67,6 @@ const OrderReturnsPlugin: FC<Props> = (props) => {
               ))}
             </Box>
           )}
-          <Box marginTop="SP3"><BuildStamp /></Box>
         </Card.Content>
       </Card>
     </WixDesignSystemProvider>

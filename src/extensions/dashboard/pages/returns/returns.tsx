@@ -8,7 +8,7 @@ import '@wix/design-system/styles.global.css';
 import { RETURN_EDITOR_MODAL_ID } from '../../../../lib/config';
 import { STATUS_LABELS, formatMoney, type ReturnRecord } from '../../../../lib/returns-logic';
 import { listReturns } from '../../../../lib/wix-ops';
-import { KindBadge, StatusBadge, errorText, fmtDate } from '../../../../components/common';
+import { KindBadge, StatusBadge, buildLabel, errorText, fmtDate } from '../../../../components/common';
 
 type Row = ReturnRecord & { _id: string; _createdDate?: Date };
 
@@ -74,7 +74,7 @@ const ReturnsPage: FC = () => {
     <WixDesignSystemProvider features={{ newColorsBranding: true }}>
       <Page>
         <Page.Header title="Returns & exchanges"
-          subtitle="Start a new one from an order: Sales > Orders > open the order > Process return." />
+          subtitle={`Start a new one from an order: Sales > Orders > open the order > Process return. (${buildLabel})`} />
         <Page.Content>
           <Card>
             <TableToolbar>
