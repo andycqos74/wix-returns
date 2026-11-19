@@ -39,14 +39,23 @@ export const NewReturnForm: FC<Props> = ({ orderId, onDone, onCancel }) => {
   const [errors, setErrors] = useState<string[]>([]);
 
   useEffect(() => {
-    Promise.all([getOrder(orderId), listReturnsForOrder(orderId)])
+    // Label each call so an error says which one failed.
+    const step = <T,>(label: string, p: Promise<T>) =>
+      p.catch((e) => {
+        console.error(`[returns] ${label} failed`, e);
+        throw new Error(`${label}: ${errorText(e)}`);
+      });
+    Promise.all([
+      step('Reading the order (eCommerce)', getOrder(orderId)),
+      step('Reading earlier returns (Returns collection)', listReturnsForOrder(orderId)),
+    ])
       .then(([o, existing]) => {
         setOrder(o);
         setExistingCount(existing.length);
         setRemaining(remainingQuantities(o.lineItems ?? [], existing));
         setLines((o.lineItems ?? []).map(toReturnLine));
       })
-      .catch((e) => setLoadError(errorText(e)));
+      .catch((e) => setLoadError(e.message));
   }, [orderId]);
 
   const currency = order?.currency ?? 'GBP';
@@ -57,7 +66,7 @@ export const NewReturnForm: FC<Props> = ({ orderId, onDone, onCancel }) => {
   const effRefund = refund ?? suggestedRefund(kind, credit, kind === 'EXCHANGE' ? exch : 0);
   const due = amountDue(effPriceDiff, effPostage);
 
-  if (loadError) return <SectionHelper appearance="danger">Couldn't load the order: {loadError}</SectionHelper>;
+  if (loadError) return <SectionHelper appearance="danger">Couldn't start the return. {loadError}</SectionHelper>;
   if (!order) return <Box align="center" padding="SP6"><Loader size="small" /></Box>;
 
   const setQty = (lineItemId: string, q: number) =>

@@ -18,13 +18,37 @@ export const KindBadge: FC<{ kind: ReturnRecord['kind'] }> = ({ kind }) => (
   </Badge>
 );
 
+/**
+ * Readable text for a Wix SDK error. The SDK puts a JSON blob in `message` and reports
+ * "UNKNOWN" as the description when the HTTP response has no status text, so dig out
+ * the server message, HTTP status, error code and request ID instead.
+ */
 export function errorText(e: unknown): string {
-  const anyE = e as any;
-  return (
-    anyE?.details?.applicationError?.description ??
-    anyE?.message ??
-    (typeof e === 'string' ? e : 'Something went wrong')
-  );
+  if (typeof e === 'string') return e;
+  const err = e as any;
+  if (!err) return 'Something went wrong';
+  let message: string = err.message ?? '';
+  try {
+    const parsed = JSON.parse(message);
+    if (parsed && typeof parsed.message === 'string') message = parsed.message;
+  } catch {
+    /* plain-text message */
+  }
+  const app = err.details?.applicationError;
+  const code = app?.code && app.code !== 'UNKNOWN' ? app.code : '';
+  const description = app?.description && app.description !== 'UNKNOWN' && app.description !== message ? app.description : '';
+  const status: number | undefined = err.status;
+  const requestId: string | undefined = err.requestId ?? err.details?.requestId;
+
+  const main = [message && message !== 'UNKNOWN' ? message : '', description].filter(Boolean).join(': ') || 'Request failed';
+  const meta = [status && `HTTP ${status}`, code, requestId && `request ${requestId}`].filter(Boolean).join(', ');
+  const hint =
+    status === 403 || status === 401
+      ? ' The app is missing a permission on this site: add it in the app dashboard (Develop > Permissions), then re-approve the app on the site (Agree & Update).'
+      : status === 404
+        ? ' Wix says this does not exist on this site.'
+        : '';
+  return `${main}${meta ? ` (${meta})` : ''}.${hint}`;
 }
 
 export function toastError(e: unknown, prefix = '') {

@@ -6,7 +6,6 @@ import { Box, CustomModalLayout, Loader, WixDesignSystemProvider } from '@wix/de
 import '@wix/design-system/styles.global.css';
 import { NewReturnForm } from '../../../../components/NewReturnForm';
 import { ReturnDetail } from '../../../../components/ReturnDetail';
-import config from './return-editor.config.ts';
 
 interface Params {
   orderId?: string;
@@ -31,8 +30,10 @@ const ReturnEditorModal: FC = () => {
   return (
     <WixDesignSystemProvider features={{ newColorsBranding: true }}>
       <CustomModalLayout
-        width={config.width}
-        maxHeight={config.height}
+        // The modal frame is already sized by return-editor.config.ts; fill it rather than match it,
+        // or the layout's border overflows and adds scrollbars.
+        width="100%"
+        maxHeight="100vh"
         title={returnId ? 'Return / exchange' : 'Process a return or exchange'}
         onCloseButtonClick={close}
         content={
