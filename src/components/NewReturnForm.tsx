@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FC } from 'react';
 import {
   Box, Button, Card, Divider, Dropdown, FormField, Input, InputArea, Loader, NumberInput,
-  RadioGroup, SectionHelper, Text, TextButton,
+  Checkbox, RadioGroup, SectionHelper, Text, TextButton,
 } from '@wix/design-system';
 import {
   REASONS, WIX_STORES_APP_ID, type ExchangeLine, type ReturnKind, type ReturnLine,
@@ -122,6 +122,11 @@ export const NewReturnForm: FC<Props> = ({ orderId, onDone, onCancel }) => {
           <RadioGroup.Radio value="EXCHANGE">Exchange (send replacement)</RadioGroup.Radio>
         </RadioGroup>
       </FormField>
+      {kind === 'RETURN' && (
+        <Text size="small" secondary>
+          A return sends nothing back to the customer. If they're getting a replacement (even the same item), choose Exchange.
+        </Text>
+      )}
 
       <Card>
         <Card.Header title="Items coming back" subtitle="Set how many of each line the customer is sending back." />
@@ -201,10 +206,14 @@ export const NewReturnForm: FC<Props> = ({ orderId, onDone, onCancel }) => {
               </SectionHelper>
             )}
             {kind === 'EXCHANGE' && (
-              <TextButton size="small" onClick={() => setCreateOrderNow(!createOrderNow)}>
-                {createOrderNow ? '✓ Create the replacement order now (click to wait until the item is received)'
-                  : '✗ Wait: create the replacement order later from the return (click to create now)'}
-              </TextButton>
+              <Checkbox checked={createOrderNow} onChange={() => setCreateOrderNow(!createOrderNow)}>
+                Create the replacement order now
+              </Checkbox>
+            )}
+            {kind === 'EXCHANGE' && !createOrderNow && (
+              <Text size="small" skin="error">
+                Nothing will ship until you open this return and click Create replacement order.
+              </Text>
             )}
           </Box>
         </Card.Content>
@@ -226,7 +235,7 @@ export const NewReturnForm: FC<Props> = ({ orderId, onDone, onCancel }) => {
 };
 
 /** Search the catalogue and build the list of replacement items. */
-const ExchangePicker: FC<{ currency: string; items: ExchangeLine[]; onChange: (x: ExchangeLine[]) => void }> = ({
+export const ExchangePicker: FC<{ currency: string; items: ExchangeLine[]; onChange: (x: ExchangeLine[]) => void }> = ({
   currency, items, onChange,
 }) => {
   const [text, setText] = useState('');

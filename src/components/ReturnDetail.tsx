@@ -1,12 +1,16 @@
 import { useEffect, useState, type FC } from 'react';
 import {
-  Box, Button, Card, FormField, Heading, InputArea, Loader, NumberInput, SectionHelper, Text, TextButton,
+  Box, Button, Card, Dropdown, FormField, Heading, Input, InputArea, Loader, NumberInput, SectionHelper, Text, TextButton,
 } from '@wix/design-system';
-import { allowedTransitions, formatMoney, withHistory, type ReturnRecord } from '../lib/returns-logic';
+import {
+  REASONS, allowedTransitions, applyEdit, completionCheck, editability, formatMoney, reopenStatus, withHistory,
+  type ExchangeLine, type ReturnRecord,
+} from '../lib/returns-logic';
 import {
   createExchangeOrder, createPaymentLink, getReturn, receive, refreshPaymentStatus, restock, saveReturn,
 } from '../lib/wix-ops';
 import { KindBadge, StatusBadge, errorText, fmtDate, toastError, toastOk } from './common';
+import { ExchangePicker } from './NewReturnForm';
 
 type Stored = ReturnRecord & { _id: string; _createdDate?: Date };
 
@@ -18,6 +22,8 @@ export const ReturnDetail: FC<{ returnId: string; onChanged?: () => void }> = ({
   const [receiving, setReceiving] = useState(false);
   const [notes, setNotes] = useState('');
   const [loadError, setLoadError] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [confirming, setConfirming] = useState<'' | 'complete' | 'cancel'>('');
 
   useEffect(() => {
     getReturn(returnId)
@@ -55,6 +61,9 @@ export const ReturnDetail: FC<{ returnId: string; onChanged?: () => void }> = ({
   const isExchange = rec.kind === 'EXCHANGE';
   const pendingRestock = rec.status !== 'AWAITING_ITEM' && rec.items.some((i) => i.restockQty > 0 && !i.restocked);
   const set = (patch: Partial<Stored>, history: string) => run(history, () => saveReturn(withHistory({ ...rec, ...patch }, history)), history);
+  const can = editability(rec);
+  const reopenTo = reopenStatus(rec);
+  const check = completionCheck(rec);
 
   return (
     <Box direction="vertical" gap="SP4">
@@ -62,7 +71,31 @@ export const ReturnDetail: FC<{ returnId: string; onChanged?: () => void }> = ({
         <Heading size="small">{rec.returnNumber}</Heading>
         <KindBadge kind={rec.kind} />
         <StatusBadge status={rec.status} />
+        <Box marginLeft="auto" gap="SP2">
+          {can.any && !editing && !receiving && (
+            <Button size="small" priority="secondary" disabled={!!busy} onClick={() => setEditing(true)}>Edit</Button>
+          )}
+          {reopenTo && (
+            <Button size="small" priority="secondary" disabled={!!busy}
+              onClick={() => set({ status: reopenTo }, `Reopened (was ${rec.status === 'COMPLETED' ? 'completed' : 'cancelled'}).`)}>
+              Reopen
+            </Button>
+          )}
+        </Box>
       </Box>
+      {isExchange && !rec.exchangeOrderId && rec.status !== 'CANCELLED' && (
+        <SectionHelper appearance="warning">
+          No replacement order has been created yet, so nothing will be shipped. Use <b>Create replacement order</b> below.
+        </SectionHelper>
+      )}
+      {editing && (
+        <EditPanel rec={rec} busy={!!busy} onCancel={() => setEditing(false)}
+          onSave={(edit) => run('edit', async () => {
+            const next = applyEdit(rec, edit);
+            setEditing(false);
+            return next === rec ? rec : saveReturn(next as Stored);
+          }, 'Changes saved')} />
+      )}
       <Text size="small" secondary>
         Order #{rec.orderNumber} · {rec.customerName} {rec.customerEmail && `· ${rec.customerEmail}`} · {rec.reason}
       </Text>
@@ -199,25 +232,105 @@ export const ReturnDetail: FC<{ returnId: string; onChanged?: () => void }> = ({
       </Card>
 
       {/* ---------- close ---------- */}
-      {canMove.length > 0 && !receiving && (
-        <Box gap="SP2" align="right">
-          {canMove.includes('CANCELLED') && (
-            <Button skin="destructive" priority="secondary" disabled={!!busy}
-              onClick={() => set({ status: 'CANCELLED' }, 'Return cancelled.')}>Cancel return</Button>
+      {canMove.length > 0 && !receiving && !editing && !confirming && (
+        <Box direction="vertical" gap="SP2">
+          {canMove.includes('COMPLETED') && check.blockers.length > 0 && (
+            <Text size="tiny" secondary>Can't complete yet: {check.blockers.join(' ')}</Text>
           )}
-          {canMove.includes('COMPLETED') && (
-            <Button disabled={!!busy} onClick={() => set({ status: 'COMPLETED' }, 'Return completed.')}>Mark completed</Button>
+          {canMove.includes('COMPLETED') && check.blockers.length === 0 && check.warnings.length > 0 && (
+            <Text size="tiny" secondary>Still open: {check.warnings.join(' ')}</Text>
           )}
+          <Box gap="SP2" align="right">
+            {canMove.includes('CANCELLED') && (
+              <Button skin="destructive" priority="secondary" disabled={!!busy}
+                onClick={() => (rec.status === 'RECEIVED' ? setConfirming('cancel') : set({ status: 'CANCELLED' }, 'Return cancelled.'))}>
+                Cancel return
+              </Button>
+            )}
+            {canMove.includes('COMPLETED') && (
+              <Button disabled={!!busy || check.blockers.length > 0}
+                onClick={() => (check.warnings.length ? setConfirming('complete') : set({ status: 'COMPLETED' }, 'Return completed.'))}>
+                Mark completed
+              </Button>
+            )}
+          </Box>
         </Box>
       )}
-      {rec.status === 'RECEIVED' && (rec.refundStatus === 'DUE' || (isExchange && rec.amountDue > 0 && rec.paymentStatus !== 'PAID') || pendingRestock) && (
-        <Text size="tiny" secondary>Still open: {[
-          rec.refundStatus === 'DUE' && 'refund',
-          isExchange && rec.amountDue > 0 && rec.paymentStatus !== 'PAID' && 'customer payment',
-          pendingRestock && 'restock',
-        ].filter(Boolean).join(', ')}.</Text>
+      {confirming === 'complete' && (
+        <SectionHelper appearance="warning" actionText="Complete anyway"
+          onAction={() => { setConfirming(''); set({ status: 'COMPLETED' }, `Completed with open items: ${check.warnings.join(' ')}`); }}
+          showCloseButton onClose={() => setConfirming('')}>
+          Still open: {check.warnings.join(' ')}
+        </SectionHelper>
+      )}
+      {confirming === 'cancel' && (
+        <SectionHelper appearance="danger" actionText="Cancel the return"
+          onAction={() => { setConfirming(''); set({ status: 'CANCELLED' }, 'Cancelled after the item was received.'); }}
+          showCloseButton onClose={() => setConfirming('')}>
+          The item has already been received.
+          {rec.items.some((i) => i.restocked) ? ' Stock already added back stays added; adjust it in Inventory if needed.' : ''}
+          {rec.exchangeOrderId ? ` Replacement order #${rec.exchangeOrderNumber} is not cancelled; cancel it on the order if needed.` : ''}
+        </SectionHelper>
       )}
     </Box>
+  );
+};
+
+type EditValues = { reason: string; refundAmount: number; priceDifference: number; postageCharge: number; exchangeItems: ExchangeLine[] };
+
+/** Edits what's still editable: reason, refund, charges (until a payment link exists), replacements (until the order exists). */
+const EditPanel: FC<{ rec: Stored; busy: boolean; onCancel: () => void; onSave: (e: EditValues) => void }> = ({
+  rec, busy, onCancel, onSave,
+}) => {
+  const can = editability(rec);
+  const [reason, setReason] = useState(rec.reason);
+  const [refundAmount, setRefund] = useState(rec.refundAmount);
+  const [priceDifference, setPriceDiff] = useState(rec.priceDifference);
+  const [postageCharge, setPostage] = useState(rec.postageCharge);
+  const [exchangeItems, setExchangeItems] = useState<ExchangeLine[]>(rec.exchangeItems);
+  const money = (set: (n: number) => void) => (v: number | null) => set(v ?? 0);
+  return (
+    <Card>
+      <Card.Header title="Edit return" />
+      <Card.Divider />
+      <Card.Content>
+        <Box direction="vertical" gap="SP3">
+          <Box gap="SP3">
+            <FormField label="Reason">
+              <Dropdown selectedId={reason} options={[...new Set([...REASONS, rec.reason])].map((r) => ({ id: r, value: r }))}
+                onSelect={(o: any) => setReason(String(o.id))} />
+            </FormField>
+            <FormField label="Refund owed">
+              <NumberInput prefix={<Input.Affix>£</Input.Affix>} min={0} step={0.01} value={refundAmount} onChange={money(setRefund)} />
+            </FormField>
+          </Box>
+          {rec.kind === 'EXCHANGE' && (can.charges ? (
+            <Box gap="SP3">
+              <FormField label="Price difference charge">
+                <NumberInput prefix={<Input.Affix>£</Input.Affix>} min={0} step={0.01} value={priceDifference} onChange={money(setPriceDiff)} />
+              </FormField>
+              <FormField label="Postage charge">
+                <NumberInput prefix={<Input.Affix>£</Input.Affix>} min={0} step={0.01} value={postageCharge} onChange={money(setPostage)} />
+              </FormField>
+            </Box>
+          ) : (
+            <Text size="small" secondary>Charges are fixed because a payment link exists. Settle any difference with a refund.</Text>
+          ))}
+          {rec.kind === 'EXCHANGE' && (can.replacementItems ? (
+            <ExchangePicker currency="GBP" items={exchangeItems} onChange={setExchangeItems} />
+          ) : (
+            <Text size="small" secondary>Replacement items are fixed because order #{rec.exchangeOrderNumber} exists. Change that order in Wix instead.</Text>
+          ))}
+          <Box gap="SP2" align="right">
+            <Button priority="secondary" size="small" onClick={onCancel} disabled={busy}>Cancel</Button>
+            <Button size="small" disabled={busy || (rec.kind === 'EXCHANGE' && can.replacementItems && exchangeItems.length === 0)}
+              onClick={() => onSave({ reason, refundAmount, priceDifference, postageCharge, exchangeItems })}>
+              Save changes
+            </Button>
+          </Box>
+        </Box>
+      </Card.Content>
+    </Card>
   );
 };
 

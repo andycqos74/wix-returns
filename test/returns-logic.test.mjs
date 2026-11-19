@@ -113,8 +113,60 @@ test('newRecord keeps only chosen lines and sets refund/payment state', () => {
 
 test('status transitions', () => {
   assert.deepEqual(L.allowedTransitions({ status: 'AWAITING_ITEM' }), ['RECEIVED', 'CANCELLED']);
-  assert.deepEqual(L.allowedTransitions({ status: 'RECEIVED' }), ['COMPLETED']);
+  assert.deepEqual(L.allowedTransitions({ status: 'RECEIVED' }), ['COMPLETED', 'CANCELLED']);
   assert.deepEqual(L.allowedTransitions({ status: 'COMPLETED' }), []);
+});
+
+test('reopen goes back to the right step', () => {
+  assert.equal(L.reopenStatus({ status: 'COMPLETED', receivedDate: '2026-11-18' }), 'RECEIVED');
+  assert.equal(L.reopenStatus({ status: 'CANCELLED', receivedDate: '' }), 'AWAITING_ITEM');
+  assert.equal(L.reopenStatus({ status: 'CANCELLED', receivedDate: '2026-11-18' }), 'RECEIVED');
+  assert.equal(L.reopenStatus({ status: 'RECEIVED', receivedDate: '' }), null);
+});
+
+const exchangeBase = () => L.newRecord(
+  { returnNumber: '10023-R1', orderId: 'o', orderNumber: '10023', customerName: '', customerEmail: '' },
+  draft({ kind: 'EXCHANGE', refundAmount: 0, exchangeItems: [{ catalogItemId: 'p', appId: STORES, catalogOptions: {}, name: 'Shirt', options: 'Size: M', unitPrice: 45, quantity: 1 }] }),
+);
+
+test('completionCheck blocks an exchange with no replacement order', () => {
+  const r = { ...exchangeBase(), status: 'RECEIVED' };
+  assert.deepEqual(L.completionCheck(r).blockers, ["The replacement order hasn't been created."]);
+  const withOrder = { ...r, exchangeOrderId: 'ord-2', amountDue: 3, paymentStatus: 'UNPAID', refundStatus: 'DUE' };
+  const c = L.completionCheck(withOrder);
+  assert.deepEqual(c.blockers, []);
+  assert.equal(c.warnings.length, 2);
+  assert.match(L.completionCheck({ ...withOrder, status: 'AWAITING_ITEM' }).blockers.join(), /received first/);
+});
+
+test('editability locks things once they have gone out to Wix', () => {
+  const r = exchangeBase();
+  assert.deepEqual(L.editability(r), { any: true, reason: true, refund: true, charges: true, replacementItems: true });
+  assert.equal(L.editability({ ...r, exchangeOrderId: 'x' }).replacementItems, false);
+  assert.equal(L.editability({ ...r, paymentRequestId: 'pr' }).charges, false);
+  assert.equal(L.editability({ ...r, status: 'COMPLETED' }).any, false);
+});
+
+test('applyEdit recalculates and records changes', () => {
+  const r = exchangeBase();
+  const same = L.applyEdit(r, { reason: r.reason, refundAmount: 0, priceDifference: 0, postageCharge: 0, exchangeItems: r.exchangeItems });
+  assert.equal(same, r, 'no change returns the same record');
+
+  const e = L.applyEdit(r, {
+    reason: 'Faulty / damaged', refundAmount: 5, priceDifference: 0, postageCharge: 3.5,
+    exchangeItems: [{ ...r.exchangeItems[0], options: 'Size: L' }],
+  }, new Date('2026-11-19T12:00:00Z'));
+  assert.equal(e.reason, 'Faulty / damaged');
+  assert.equal(e.refundStatus, 'DUE');
+  assert.equal(e.amountDue, 3.5);
+  assert.equal(e.exchangeItems[0].options, 'Size: L');
+  assert.match(e.history.at(-1).text, /reason .*refund 0.00 → 5.00.*postage 0.00 → 3.50.*Size: L/);
+
+  const locked = L.applyEdit({ ...r, exchangeOrderId: 'x', paymentRequestId: 'p' }, {
+    reason: r.reason, refundAmount: 0, priceDifference: 9, postageCharge: 9, exchangeItems: [],
+  });
+  assert.equal(locked.priceDifference, 0);
+  assert.equal(locked.exchangeItems.length, 1);
 });
 
 test('markReceived clamps restock quantities; restockPlan skips done, zero and non-Stores lines', () => {

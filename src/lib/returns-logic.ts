@@ -276,11 +276,97 @@ export function allowedTransitions(r: Pick<ReturnRecord, 'status'>): ReturnStatu
     case 'AWAITING_ITEM':
       return ['RECEIVED', 'CANCELLED'];
     case 'RECEIVED':
-      return ['COMPLETED'];
+      return ['COMPLETED', 'CANCELLED'];
     case 'COMPLETED':
     case 'CANCELLED':
       return [];
   }
+}
+
+/** Where "Reopen" takes a completed or cancelled return (null = can't reopen). */
+export function reopenStatus(r: Pick<ReturnRecord, 'status' | 'receivedDate'>): ReturnStatus | null {
+  if (r.status === 'COMPLETED') return 'RECEIVED';
+  if (r.status === 'CANCELLED') return r.receivedDate ? 'RECEIVED' : 'AWAITING_ITEM';
+  return null;
+}
+
+/**
+ * What stands in the way of completing a return.
+ * `blockers` must be fixed first; `warnings` can be overridden on purpose.
+ */
+export function completionCheck(
+  r: Pick<ReturnRecord, 'kind' | 'status' | 'exchangeOrderId' | 'amountDue' | 'paymentStatus' | 'refundStatus' | 'items'>,
+): { blockers: string[]; warnings: string[] } {
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+  if (r.status !== 'RECEIVED') blockers.push('The item has to be marked received first.');
+  if (r.kind === 'EXCHANGE' && !r.exchangeOrderId) blockers.push('The replacement order hasn\'t been created.');
+  if (r.kind === 'EXCHANGE' && r.amountDue > 0 && r.paymentStatus !== 'PAID') warnings.push('The customer hasn\'t paid the exchange charge.');
+  if (r.refundStatus === 'DUE') warnings.push('A refund is still marked as owed.');
+  if (r.items.some((i) => i.restockQty > 0 && !i.restocked)) warnings.push('Some items haven\'t been restocked.');
+  return { blockers, warnings };
+}
+
+export interface ReturnEdit {
+  reason: string;
+  refundAmount: number;
+  priceDifference: number;
+  postageCharge: number;
+  /** Only applied while no replacement order exists. */
+  exchangeItems: ExchangeLine[];
+}
+
+/** Which parts of a return can still be edited. */
+export function editability(r: Pick<ReturnRecord, 'kind' | 'status' | 'exchangeOrderId' | 'paymentRequestId'>) {
+  const open = r.status === 'AWAITING_ITEM' || r.status === 'RECEIVED';
+  const exchangeOpen = open && r.kind === 'EXCHANGE' && !r.exchangeOrderId;
+  return {
+    any: open,
+    reason: open,
+    refund: open,
+    // Charges feed the replacement order's fees and the payment link, so they're fixed once a link exists.
+    charges: open && r.kind === 'EXCHANGE' && !r.paymentRequestId,
+    replacementItems: exchangeOpen,
+  };
+}
+
+/** Applies an edit and records what changed in the history. Returns the record unchanged if nothing did. */
+export function applyEdit(r: ReturnRecord, e: ReturnEdit, now = new Date()): ReturnRecord {
+  const can = editability(r);
+  const changes: string[] = [];
+  let next: ReturnRecord = { ...r };
+
+  if (can.reason && e.reason.trim() && e.reason !== r.reason) {
+    changes.push(`reason "${r.reason}" → "${e.reason}"`);
+    next.reason = e.reason;
+  }
+  if (can.refund && money(e.refundAmount) !== money(r.refundAmount)) {
+    changes.push(`refund ${money(r.refundAmount).toFixed(2)} → ${money(e.refundAmount).toFixed(2)}`);
+    next.refundAmount = money(e.refundAmount);
+    if (next.refundStatus !== 'DONE') next.refundStatus = next.refundAmount > 0 ? 'DUE' : 'NONE';
+  }
+  if (can.charges) {
+    if (money(e.priceDifference) !== money(r.priceDifference)) {
+      changes.push(`price difference ${money(r.priceDifference).toFixed(2)} → ${money(e.priceDifference).toFixed(2)}`);
+      next.priceDifference = money(e.priceDifference);
+    }
+    if (money(e.postageCharge) !== money(r.postageCharge)) {
+      changes.push(`postage ${money(r.postageCharge).toFixed(2)} → ${money(e.postageCharge).toFixed(2)}`);
+      next.postageCharge = money(e.postageCharge);
+    }
+    next.amountDue = amountDue(next.priceDifference, next.postageCharge);
+  }
+  if (can.replacementItems) {
+    const items = e.exchangeItems.filter((x) => x.quantity > 0);
+    const describe = (xs: ExchangeLine[]) => xs.map((x) => `${x.quantity}× ${x.name}${x.options ? ` (${x.options})` : ''}`).join(', ') || 'none';
+    if (describe(items) !== describe(r.exchangeItems)) {
+      changes.push(`replacements: ${describe(items)}`);
+      next.exchangeItems = items;
+    }
+  }
+  if (changes.length === 0) return r;
+  next = withHistory(next, `Edited: ${changes.join('; ')}.`, now);
+  return next;
 }
 
 /**
