@@ -236,10 +236,18 @@ const ExchangePicker: FC<{ currency: string; items: ExchangeLine[]; onChange: (x
   const [variantIdx, setVariantIdx] = useState<number>();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [noMatch, setNoMatch] = useState('');
 
   async function doSearch() {
-    setBusy(true); setErr('');
-    try { setResults(await searchProducts(text)); setProduct(undefined); setVariants([]); }
+    setBusy(true); setErr(''); setNoMatch('');
+    try {
+      const { catalog, products } = await searchProducts(text);
+      setResults(products); setProduct(undefined); setVariants([]);
+      if (products.length === 0) {
+        const where = catalog === 'V3_CATALOG' ? 'Stores catalogue (V3)' : catalog === 'V1_CATALOG' ? 'Stores catalogue (V1)' : 'catalogue';
+        setNoMatch(`No products matching "${text.trim()}" in the ${where}. Hidden products only show if the app has the "read admin" products permission.`);
+      }
+    }
     catch (e) { setErr(errorText(e)); }
     finally { setBusy(false); }
   }
@@ -318,6 +326,7 @@ const ExchangePicker: FC<{ currency: string; items: ExchangeLine[]; onChange: (x
               <Button onClick={add} disabled={variantIdx === undefined}>Add</Button>
             </Box>
           )}
+          {noMatch && <Text size="small" secondary>{noMatch}</Text>}
           {err && <SectionHelper appearance="danger">{err}</SectionHelper>}
         </Box>
       </Card.Content>

@@ -213,15 +213,21 @@ export interface PickableProduct {
   name: string;
 }
 
-export async function searchProducts(text: string): Promise<PickableProduct[]> {
+/** Finds products by name (or SKU on V3). Also returns which catalogue was searched, for the UI. */
+export async function searchProducts(text: string): Promise<{ catalog: CatalogVersion; products: PickableProduct[] }> {
   const q = text.trim();
-  if (!q) return [];
-  if ((await getCatalogVersion()) === 'V3_CATALOG') {
-    const res: any = await productsV3.searchProducts({ search: { expression: q }, cursorPaging: { limit: 15 } } as any, {} as any);
-    return (res.products ?? []).map((p: any) => ({ productId: p._id, name: p.name ?? '' }));
+  const catalog = await getCatalogVersion();
+  if (!q) return { catalog, products: [] };
+  if (catalog === 'V3_CATALOG') {
+    // V3 free-text search only looks in the fields you list; with none listed it matches nothing.
+    const res: any = await productsV3.searchProducts(
+      { search: { expression: q, fields: ['name', 'variantsInfo.variants.sku'], fuzzy: true }, cursorPaging: { limit: 20 } } as any,
+      {} as any,
+    );
+    return { catalog, products: (res.products ?? []).map((p: any) => ({ productId: p._id, name: p.name ?? '' })) };
   }
-  const res = await products.queryProducts().startsWith('name', q).limit(15).find();
-  return res.items.map((p: any) => ({ productId: p._id, name: p.name ?? '' }));
+  const res = await products.queryProducts().startsWith('name', q).limit(20).find();
+  return { catalog, products: res.items.map((p: any) => ({ productId: p._id, name: p.name ?? '' })) };
 }
 
 export async function listVariants(productId: string): Promise<PickableVariant[]> {
