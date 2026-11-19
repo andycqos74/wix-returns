@@ -14,7 +14,7 @@
     "test": "node --test test/returns-logic.test.mjs",
     "predev": "node scripts/stamp-build.mjs",
     "prebuild": "node scripts/stamp-build.mjs",
-    "prerelease": "node scripts/stamp-build.mjs",
+    "prerelease": "node scripts/stamp-build.mjs && wix app build",
     "pretypecheck": "node scripts/stamp-build.mjs"
   },
   "dependencies": {
